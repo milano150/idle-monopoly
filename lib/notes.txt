@@ -1,0 +1,33 @@
+initalise database 
+
+final cityRef = database.child('cities/${citiesData[index]['name']}');
+    await cityRef.set({
+      'owner': currentPlayer,
+      'cost': citiesData[index]['cost'],
+      'rent': citiesData[index]['rent'],
+    });
+
+
+color pallete
+indigo
+
+
+svg file
+id="district1" fill="#FEFEFE" stroke="black" stroke-width="3" 
+
+
+IconData _getBuildingIcon(String building) {
+  switch (building) {
+    case 'House':
+      return Icons.house;
+    case 'Apartment':
+      return Icons.apartment;
+    case 'Mall':
+      return Icons.storefront;
+    case 'Hotel':
+      return Icons.hotel;
+    case 'Resort':
+      return Icons.beach_access;
+    default:
+      return Icons.location_city;
+  }

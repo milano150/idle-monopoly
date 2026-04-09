@@ -1,0 +1,10 @@
+beta 1.0 goal
+
+
+- curse and treasure cards
+- railways and airports
+- more buildings that are property based
+TEST
+- ui upgrade
+- timer between roll
+RELEASE 1.0
