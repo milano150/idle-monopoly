@@ -18,6 +18,7 @@ import 'market_page.dart';
 import 'package:test/data/map_model.dart';
 import 'package:test/data/map_registry.dart';
 import 'services/global_notification_service.dart';
+import 'dart:async';
 
 
 
@@ -175,6 +176,8 @@ class _HomeScreenState extends State<HomeScreen> {
   String? landedBuilding;
   String? ownerName;
   int _ownerSpecialCount = 0;
+  int _lastRollTime = 0;
+  Timer? _timer;
 
 
   String playerName = 'Player';
@@ -196,7 +199,19 @@ class _HomeScreenState extends State<HomeScreen> {
   DatabaseReference lobbyPlayerRef(String uid) =>
     lobbyRef.child('players/$uid');
 
-
+  void _listenToRollTimer() {
+    lobbyPlayerRef(widget.playerId)
+        .child('lastRollTime')
+        .onValue
+        .listen((event) {
+      final value = event.snapshot.value;
+      if (value != null) {
+        setState(() {
+          _lastRollTime = int.tryParse(value.toString()) ?? 0;
+        });
+      }
+    });
+  }
 
   void listenToPlayerProfile() {
   database
@@ -320,6 +335,7 @@ class _HomeScreenState extends State<HomeScreen> {
   });
   }
 
+
   
 
   List<CityModel> currentMap = [];
@@ -350,6 +366,14 @@ class _HomeScreenState extends State<HomeScreen> {
     return count;
   }
 
+  int get _remainingTime {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    const cooldown = 5000;//5 * 60 * 1000; // 5 minutes
+    final diff = now - _lastRollTime;
+
+    if (diff >= cooldown) return 0;
+    return cooldown - diff;
+  }
 
   
 
@@ -362,7 +386,17 @@ class _HomeScreenState extends State<HomeScreen> {
     listenToPlayerProfile();
     listenToCoins();
     loadMap();
+    _listenToRollTimer();
 
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
   }
 
 
@@ -511,25 +545,87 @@ class _HomeScreenState extends State<HomeScreen> {
 
 
   Widget buildRollButton() {
-  return ElevatedButton(
-    onPressed: isInDebt ? null : rollDice, // 🚫 blocked
-    style: ElevatedButton.styleFrom(
-      fixedSize: const Size(100, 100),
-      backgroundColor: isInDebt
-          ? Colors.red[300]
-          : const Color(0xFFFFFBFB),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Colors.black26, width: 2),
-      ),
-      elevation: 5,
-    ),
-    child: Text(
-      isInDebt ? '💀' : '🎲',
-      style: const TextStyle(fontSize: 28),
-    ),
-  );
-}
+    if (_rolled) {
+      return const SizedBox(); // 👈 don't show button at all
+    }
+    final bool isLocked = isInDebt || _remainingTime > 0;
+
+    final seconds = (_remainingTime ~/ 1000);
+    final minutes = seconds ~/ 60;
+    final remSeconds = seconds % 60;
+
+    final String timeText =
+        '${minutes}:${remSeconds.toString().padLeft(2, '0')}';
+
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        // 🎲 BUTTON
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          child: ElevatedButton(
+            onPressed: isLocked ? null : rollDice,
+            style: ElevatedButton.styleFrom(
+              fixedSize: const Size(110, 110),
+              backgroundColor: isLocked
+                  ? Colors.grey[300]
+                  : const Color(0xFFFFFBFB),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(
+                  color: isLocked ? Colors.grey : Colors.black26,
+                  width: 2,
+                ),
+              ),
+              elevation: isLocked ? 0 : 6,
+            ),
+            child: Text(
+              "🎲",
+              style: TextStyle(
+                fontSize: 40,
+                color: isLocked ? Colors.grey : Colors.black,
+              ),
+            )
+          ),
+        ),
+
+        const SizedBox(height: 20),
+
+        // ⏱ TIMER TEXT
+        if (_remainingTime > 0)
+          Column(
+            children: [
+              const Text(
+                "You can roll in",
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.black54,
+                ),
+              ),
+              const SizedBox(height: 6),
+
+              Text(
+                timeText,
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+
+        // 💀 DEBT TEXT
+        if (isInDebt)
+          const Text(
+            "Clear debt to roll",
+            style: TextStyle(
+              color: Colors.red,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+      ],
+    );
+  }
 
 
   Widget buildResultView() {
@@ -701,7 +797,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
         // Roll again
         buildCustomButton(
-          text: 'Roll Again',
+          text: 'Back',
           color: Colors.grey[800]!,
           onPressed: () {
             setState(() {
@@ -758,6 +854,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
 
   void rollDice() async {
+    if (_remainingTime > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('⏳ Wait before rolling again')),
+      );
+      return;
+    }
     if (currentMap.isEmpty) return;
 
     int randInt = random.nextInt(currentMap.length);
@@ -845,6 +947,8 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
+ 
+
     setState(() {
       city = cityName;
       owner = cityOwner;
@@ -852,13 +956,20 @@ class _HomeScreenState extends State<HomeScreen> {
       canBuy = cityOwner == null || cityOwner.isEmpty;
       cityRent = rent;
       landedBuilding = building;
-      _rolled = true;
       cityState = selectedState;
+
+      _rolled = true;
 
       if (type != 'PropertyType.railway' && type != 'PropertyType.airport') {
         _ownerSpecialCount = 0;
       }
 
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await lobbyPlayerRef(widget.playerId)
+          .child('lastRollTime')
+          .set(DateTime.now().millisecondsSinceEpoch);
     });
   }
 

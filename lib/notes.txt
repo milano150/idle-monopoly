@@ -31,3 +31,16 @@ IconData _getBuildingIcon(String building) {
     default:
       return Icons.location_city;
   }
+
+
+  int _getRailwayRent(int count) {
+    const rents = [50, 100, 200, 350, 550, 800];
+    if (count <= 0) return 0;
+    return rents[(count - 1).clamp(0, rents.length - 1)];
+  }
+
+  int _getAirportRent(int count) {
+    const rents = [150, 250, 400, 600];
+    if (count <= 0) return 0;
+    return rents[(count - 1).clamp(0, rents.length - 1)];
+  }

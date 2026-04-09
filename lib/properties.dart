@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:test/widgets/loading_wrapper.dart';
 import 'dart:math';
 import 'login_screen.dart';
 import 'services/log_service.dart';
@@ -20,6 +21,9 @@ class _PropertiesPageState extends State<PropertiesPage> {
   late PageController _pageController;
   int _coins = 0; // 👈 store coins here
   String _playerName = 'Player';
+  bool _citiesLoaded = false;
+  bool _coinsLoaded = false;
+  
 
 
   final String lobbyCode = LobbySession.lobbyCode;
@@ -57,9 +61,35 @@ class _PropertiesPageState extends State<PropertiesPage> {
       if (newCoins != null) {
         setState(() {
           _coins = int.tryParse(newCoins.toString()) ?? 0;
+          _coinsLoaded = true;
         });
       }
     });
+  }
+
+  int _countOwnedType(String playerId, Map<String, dynamic> cities, String type) {
+    int count = 0;
+
+    cities.forEach((name, data) {
+      if (data['owner'] == playerId &&
+          data['type'] == type) {
+        count++;
+      }
+    });
+
+    return count;
+  }
+
+  int _getRailwayRent(int count) {
+    const rents = [50, 100, 200, 350, 550, 800];
+    if (count <= 0) return 0;
+    return rents[(count - 1).clamp(0, rents.length - 1)];
+  }
+
+  int _getAirportRent(int count) {
+    const rents = [150, 250, 400, 600];
+    if (count <= 0) return 0;
+    return rents[(count - 1).clamp(0, rents.length - 1)];
   }
 
   void _listenToPlayerName() {
@@ -76,12 +106,19 @@ class _PropertiesPageState extends State<PropertiesPage> {
     });
   }
 
+  int _countStateProperties(String state) {
+    return _ownedCities.where((c) => c['state'] == state).length;
+  }
+
 
   void _loadProperties() {
     lobbyRef.child('cities').onValue.listen((event) {
       final data = event.snapshot.value as Map?;
       if (data == null) {
-        setState(() => _ownedCities = []);
+        setState(() {
+          _ownedCities = [];
+          _citiesLoaded = true; // ✅ FIX
+        });
         return;
       }
 
@@ -100,9 +137,12 @@ class _PropertiesPageState extends State<PropertiesPage> {
         return stateA.compareTo(stateB);
       });
 
+
       setState(() {
         _ownedCities = owned;
+        _citiesLoaded = true;
       });
+
     });
   }
   //alert system
@@ -126,11 +166,12 @@ class _PropertiesPageState extends State<PropertiesPage> {
     'Hotel': {'cost': 700, 'rm': 3.5},
     'Resort': {'cost': 900, 'rm': 5},
   };
+  
 
 
   void _showConstructMenu(Map<String, dynamic> city) {
 
-
+    final int ownedInState = _countStateProperties(city['state']);
 
     showModalBottomSheet(
       context: context,
@@ -151,7 +192,20 @@ class _PropertiesPageState extends State<PropertiesPage> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
+              const SizedBox(height: 8),
+
+              Text(
+                "$ownedInState / 3 properties owned in ${city['state']}",
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+
               const SizedBox(height: 16),
+              const SizedBox(height: 16),
+              
 
               ...buildings.entries.map((entry) {
                 final building = entry.key;
@@ -159,27 +213,116 @@ class _PropertiesPageState extends State<PropertiesPage> {
                 final rentMultiplier = entry.value['rm'];
                 final newRent = city['rent'] * rentMultiplier;
 
-                return ListTile(
-                  leading: const Icon(Icons.apartment),
-                  title: Text(building),
-                  subtitle: Text(
-                    'Cost: $cost 🪙  • Rent Multiplier: ${rentMultiplier}x •  New Rent: $newRent 🪙',
-                    style: const TextStyle(fontSize: 14),
+                // 🔒 Check if allowed
+                bool allowed = false;
+
+                if (ownedInState >= 1 && building == 'House') {
+                  allowed = true;
+                }
+
+                if (ownedInState >= 2 && ['Apartment', 'Mall'].contains(building)) {
+                  allowed = true;
+                }
+
+                if (ownedInState >= 3 && ['Hotel', 'Resort'].contains(building)) {
+                  allowed = true;
+                }
+
+                return Opacity(
+                  opacity: allowed ? 1 : 0.4,
+                  child: ListTile(
+                    leading: Stack(
+                      children: [
+                        Icon(
+                          _getBuildingIcon(building),
+                          size: 28,
+                          color: allowed ? Colors.black : Colors.grey,
+                        ),
+
+                        // 🔒 LOCK ICON
+                        if (!allowed)
+                          const Positioned(
+                            right: -2,
+                            bottom: -2,
+                            child: Icon(
+                              Icons.lock,
+                              size: 16,
+                              color: Colors.redAccent,
+                            ),
+                          ),
+                      ],
+                    ),
+
+                    title: Text(
+                      building,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: allowed ? Colors.black : Colors.grey,
+                      ),
+                    ),
+
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Cost: $cost 🪙  • ${rentMultiplier}x rent',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: allowed ? Colors.black54 : Colors.grey,
+                          ),
+                        ),
+
+                        // 🔥 SHOW UNLOCK REQUIREMENT
+                        if (!allowed)
+                        Text(
+                          () {
+                            if (building == 'House') {
+                              return "Unlock at 1 property";
+                            } else if (['Apartment', 'Mall'].contains(building)) {
+                              return "Unlock at 2 properties";
+                            } else if (['Hotel', 'Resort'].contains(building)) {
+                              return "Unlock at 3 properties";
+                            }
+                            return "";
+                          }(),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.redAccent,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    trailing: Icon(
+                      Icons.chevron_right,
+                      color: allowed ? Colors.black : Colors.grey,
+                    ),
+
+                    onTap: allowed
+                        ? () async {
+                            Navigator.pop(context);
+
+                            await _buildCity(
+                              city: city,
+                              building: building,
+                              cost: cost,
+                              rentMultiplier: rentMultiplier as double,
+                            );
+                          }
+                        : () {
+                            _showSnack(
+                              ownedInState == 1
+                                  ? "Own 2 properties to unlock this"
+                                  : ownedInState == 2
+                                      ? "Own 3 properties to unlock this"
+                                      : "Own more properties",
+                              color: Colors.orange,
+                            );
+                          },
                   ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () async {
-                    Navigator.pop(context);
-
-                    await _buildCity(
-                      city: city,
-                      building: building,
-                      cost: cost,
-                      rentMultiplier: rentMultiplier as double,
-                    );
-                  },
-
                 );
-              }),
+              }).toList(),
 
             ],
           ),
@@ -299,299 +442,323 @@ class _PropertiesPageState extends State<PropertiesPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.green[50],
-      body: Column( 
-        children: [
-          // ---- Coins AppBar ----
-          Container(
-            height: 70,
-            width: double.infinity,
-            color: Colors.indigo,
-            alignment: Alignment.center,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 6,
-                    offset: const Offset(0, 3),
+    return LoadingWrapper(
+      isLoaded: _citiesLoaded && _coinsLoaded,
+      child: Scaffold(
+        backgroundColor: Colors.green[50],
+        body: Column( 
+          children: [
+            // ---- Coins AppBar ----
+            Container(
+              height: 70,
+              width: double.infinity,
+              color: Colors.indigo,
+              alignment: Alignment.center,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 6,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  '$_coins 🪙', // 🔴 CHANGED: live coins
+                  style: const TextStyle(
+                    fontWeight: FontWeight.normal,
+                    fontSize: 20,
+                    color: Colors.black87,
                   ),
-                ],
-              ),
-              child: Text(
-                '$_coins 🪙', // 🔴 CHANGED: live coins
-                style: const TextStyle(
-                  fontWeight: FontWeight.normal,
-                  fontSize: 20,
-                  color: Colors.black87,
                 ),
               ),
             ),
-          ),
-
-          Expanded( 
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  // ---- Carousel ----
-                  SizedBox(
-                    height: 600, 
-                    child: _ownedCities.isEmpty
-                        ? const Center(
-                            child: Text(
-                              'No properties owned yet!',
-                              style:
-                                  TextStyle(fontSize: 18, color: Colors.black54),
-                            ),
-                          )
-                        : AnimatedBuilder(
-                            animation: _pageController,
-                            builder: (context, _) {
-                              return PageView.builder(
-                                controller: _pageController,
-                                scrollDirection: Axis.vertical,
-                                itemCount: _ownedCities.length,
-                                itemBuilder: (context, index) {
-                                  final city = _ownedCities[index];
-                                  final cityName = city['name'];
-                                  final state = city['state'] ?? 'Unknown';
-                                  final rent = city['rent'] ?? '-';
-                                  final cost = city['cost'] ?? '-';
-                                  final String? building = city['building']?.toString();
-                                  final bool hasBuilding = building != null;
-                                  final bool inAuction = city['inMarket'] == true;
-
-                                  final int baseRent = int.tryParse(
-                                    (city['baserent'] ?? city['rent']).toString(),
-                                  ) ??
-                                  0;
-
-                                  // 🎨 Color comes directly from DB (new architecture)
-                                  Color topColor = city['color'] != null
-                                      ? Color(city['color'])
-                                      : Colors.grey[600]!;
-
-
-
-                                  double value = 1.0;
-                                  if (_pageController.position.haveDimensions) {
-                                    value = _pageController.page! - index;
-                                    value = (1 - (value.abs() * 0.3)).clamp(0.8, 1.0);
-                                  } else if (_pageController.initialPage == index) {
-                                    value = 1.0;
-                                  } else {
-                                    value = 0.8;
-                                  }
-                                  double opacity = max(0.5, value);
-
-                                  return Transform.scale(
-                                    scale: value,
-                                    child: Opacity(
-                                      opacity: opacity,
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 24, vertical: 24),
-                                        child: Opacity(
-                                          opacity: inAuction ? 0.85 : 1,
-                                          child: Material(
-                                            elevation: 6,
-                                            borderRadius: BorderRadius.circular(16),
-                                            child: Container(
-                                              decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius: BorderRadius.circular(16),
-                                              ),
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.stretch,
-                                                children: [
-                                                  Container(
-                                                    height: inAuction ? 32 : 50,
-                                                    decoration: BoxDecoration(
-                                                      color: topColor,
-                                                      borderRadius:
-                                                          const BorderRadius.vertical(
-                                                        top: Radius.circular(16),
+      
+            Expanded( 
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    // ---- Carousel ----
+                    SizedBox(
+                      height: 600, 
+                      child: _ownedCities.isEmpty
+                          ? const Center(
+                              child: Text(
+                                '',
+                                style:
+                                    TextStyle(fontSize: 18, color: Colors.black54),
+                              ),
+                            )
+                          : AnimatedBuilder(
+                              animation: _pageController,
+                              builder: (context, _) {
+                                return PageView.builder(
+                                  controller: _pageController,
+                                  scrollDirection: Axis.vertical,
+                                  itemCount: _ownedCities.length,
+                                  itemBuilder: (context, index) {
+                                    final city = _ownedCities[index];
+                                    final cityName = city['name'];
+                                    final state = city['state'] ?? 'Unknown';
+      
+                                    final cost = city['cost'] ?? '-';
+                                    final String? building = city['building']?.toString();
+                                    final bool hasBuilding = building != null;
+                                    final bool inAuction = city['inMarket'] == true;
+                                    final String? type = city['type']?.toString();
+                                    final bool isSpecial = type == 'PropertyType.railway' || type == 'PropertyType.airport';
+                                    final int baseRent = int.tryParse(
+                                      (city['baserent'] ?? city['rent']).toString(),
+                                    ) ??
+                                    0;
+      
+                                    int displayRent = int.tryParse(city['rent']?.toString() ?? '0') ?? 0;
+      
+                                    if (type == 'PropertyType.railway') {
+                                      int count = _ownedCities
+                                          .where((c) => c['type'] == 'PropertyType.railway')
+                                          .length;
+      
+                                      displayRent = _getRailwayRent(count);
+                                    }
+      
+                                    else if (type == 'PropertyType.airport') {
+                                      int count = _ownedCities
+                                          .where((c) => c['type'] == 'PropertyType.airport')
+                                          .length;
+      
+                                      displayRent = _getAirportRent(count);
+                                    }
+      
+                                    // 🎨 Color comes directly from DB (new architecture)
+                                    Color topColor = city['color'] != null
+                                        ? Color(city['color'])
+                                        : Colors.grey[600]!;
+      
+      
+      
+                                    double value = 1.0;
+                                    if (_pageController.position.haveDimensions) {
+                                      value = _pageController.page! - index;
+                                      value = (1 - (value.abs() * 0.3)).clamp(0.8, 1.0);
+                                    } else if (_pageController.initialPage == index) {
+                                      value = 1.0;
+                                    } else {
+                                      value = 0.8;
+                                    }
+                                    double opacity = max(0.5, value);
+      
+                                    return Transform.scale(
+                                      scale: value,
+                                      child: Opacity(
+                                        opacity: opacity,
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 24, vertical: 24),
+                                          child: Opacity(
+                                            opacity: inAuction ? 0.85 : 1,
+                                            child: Material(
+                                              elevation: 6,
+                                              borderRadius: BorderRadius.circular(16),
+                                              child: Container(
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white,
+                                                  borderRadius: BorderRadius.circular(16),
+                                                ),
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.stretch,
+                                                  children: [
+                                                    Container(
+                                                      height: inAuction ? 32 : 50,
+                                                      decoration: BoxDecoration(
+                                                        color: topColor,
+                                                        borderRadius:
+                                                            const BorderRadius.vertical(
+                                                          top: Radius.circular(16),
+                                                        ),
                                                       ),
                                                     ),
-                                                  ),
-                                                  Padding(
-                                                    padding: const EdgeInsets.all(16.0),
-                                                    child: Column(
-                                                      crossAxisAlignment:
-                                                          CrossAxisAlignment.start,
-                                                      children: [
-                                                        Center(
-                                                          child: Column(
-                                                            children: [
-                                                              Text(
-                                                                cityName,
-                                                                style: const TextStyle(
-                                                                  fontSize: 30,
-                                                                  fontWeight: FontWeight.bold,
-                                                                ),
-                                                              ),
-                                          
-                                                              if (inAuction)
-                                                                Container(
-                                                                  margin: const EdgeInsets.only(top: 6),
-                                                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                                                  decoration: BoxDecoration(
-                                                                    color: Colors.orange[800],
-                                                                    borderRadius: BorderRadius.circular(12),
+                                                    Padding(
+                                                      padding: const EdgeInsets.all(16.0),
+                                                      child: Column(
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment.start,
+                                                        children: [
+                                                          Center(
+                                                            child: Column(
+                                                              children: [
+                                                                Text(
+                                                                  cityName,
+                                                                  style: const TextStyle(
+                                                                    fontSize: 30,
+                                                                    fontWeight: FontWeight.bold,
                                                                   ),
-                                                                  child: const Text(
-                                                                    'IN AUCTION',
-                                                                    style: TextStyle(
-                                                                      color: Colors.white,
-                                                                      fontSize: 12,
-                                                                      fontWeight: FontWeight.bold,
-                                                                      letterSpacing: 1,
+                                                                ),
+                                            
+                                                                if (inAuction)
+                                                                  Container(
+                                                                    margin: const EdgeInsets.only(top: 6),
+                                                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                                                    decoration: BoxDecoration(
+                                                                      color: Colors.orange[800],
+                                                                      borderRadius: BorderRadius.circular(12),
+                                                                    ),
+                                                                    child: const Text(
+                                                                      'IN AUCTION',
+                                                                      style: TextStyle(
+                                                                        color: Colors.white,
+                                                                        fontSize: 12,
+                                                                        fontWeight: FontWeight.bold,
+                                                                        letterSpacing: 1,
+                                                                      ),
                                                                     ),
                                                                   ),
-                                                                ),
+                                                              ],
+                                                            ),
+                                                          ),
+                                            
+                                                          const SizedBox(height: 8),
+                                                          Center(
+                                                            child: Text(
+                                                              state,
+                                                              style: const TextStyle(
+                                                                  fontSize: 18,
+                                                                  color: Colors.black54),
+                                                            ),
+                                                          ),
+                                                          const SizedBox(height: 8),
+                                                          Row(
+                                                            mainAxisAlignment:
+                                                                MainAxisAlignment
+                                                                    .spaceBetween,
+                                                            children: [
+                                                              Text('Cost: $cost 🪙',
+                                                                  style: const TextStyle(
+                                                                      fontSize: 18,
+                                                                      fontWeight:
+                                                                          FontWeight.w600)),
+                                                              Text('Base Rent: $baseRent 🪙',
+                                                                  style: const TextStyle(
+                                                                      fontSize: 18,
+                                                                      fontWeight:
+                                                                          FontWeight.w600)),
                                                             ],
                                                           ),
-                                                        ),
-                                          
-                                                        const SizedBox(height: 8),
-                                                        Center(
-                                                          child: Text(
-                                                            state,
-                                                            style: const TextStyle(
-                                                                fontSize: 18,
-                                                                color: Colors.black54),
+                                                          const SizedBox(height: 16),
+                                                          Row(
+                                                            mainAxisAlignment:
+                                                                MainAxisAlignment
+                                                                    .spaceBetween,
+                                                            children: [
+                                                              Text('Building: $building',
+                                                                  style: const TextStyle(
+                                                                      fontSize: 18,
+                                                                      fontWeight:
+                                                                          FontWeight.w600)),
+                                                              Text('Rent: $displayRent 🪙',
+                                                                  style: const TextStyle(
+                                                                      fontSize: 18,
+                                                                      fontWeight:
+                                                                          FontWeight.w600)),
+                                                            ],
                                                           ),
-                                                        ),
-                                                        const SizedBox(height: 8),
-                                                        Row(
-                                                          mainAxisAlignment:
-                                                              MainAxisAlignment
-                                                                  .spaceBetween,
-                                                          children: [
-                                                            Text('Cost: $cost 🪙',
-                                                                style: const TextStyle(
-                                                                    fontSize: 18,
-                                                                    fontWeight:
-                                                                        FontWeight.w600)),
-                                                            Text('Base Rent: $baseRent 🪙',
-                                                                style: const TextStyle(
-                                                                    fontSize: 18,
-                                                                    fontWeight:
-                                                                        FontWeight.w600)),
-                                                          ],
-                                                        ),
-                                                        const SizedBox(height: 16),
-                                                        Row(
-                                                          mainAxisAlignment:
-                                                              MainAxisAlignment
-                                                                  .spaceBetween,
-                                                          children: [
-                                                            Text('Building: $building',
-                                                                style: const TextStyle(
-                                                                    fontSize: 18,
-                                                                    fontWeight:
-                                                                        FontWeight.w600)),
-                                                            Text('Rent: $rent 🪙',
-                                                                style: const TextStyle(
-                                                                    fontSize: 18,
-                                                                    fontWeight:
-                                                                        FontWeight.w600)),
-                                                          ],
-                                                        ),
-                                                        const SizedBox(height: 16,),
-                                                        Center(
-                                                          child: Container(
-                                                            height: 150,
-                                                            width: 150,
-                                                            margin:
-                                                                const EdgeInsets.symmetric(
-                                                                    vertical: 12),
-                                                            decoration: BoxDecoration(
-                                                              color: Colors.grey[200],
-                                                              borderRadius:
-                                                                  BorderRadius.circular(8),
-                                                              border: Border.all(
-                                                                  color: Colors.black26),
+                                                          const SizedBox(height: 16,),
+                                                          Center(
+                                                            child: Container(
+                                                              height: 150,
+                                                              width: 150,
+                                                              margin:
+                                                                  const EdgeInsets.symmetric(
+                                                                      vertical: 12),
+                                                              decoration: BoxDecoration(
+                                                                color: Colors.grey[200],
+                                                                borderRadius:
+                                                                    BorderRadius.circular(8),
+                                                                border: Border.all(
+                                                                    color: Colors.black26),
+                                                              ),
+                                                              child: building == null ? const SizedBox(): Icon(_getBuildingIcon(building),size: 80,),
                                                             ),
-                                                            child: building == null ? const SizedBox(): Icon(_getBuildingIcon(building),size: 80,),
                                                           ),
-                                                        ),
-                                                        const SizedBox(height: 16),
-                                                        Center(
-                                                          
-                                                          child: 
-                                          
-                                                            ElevatedButton(
-                                                              onPressed: inAuction
-                                                                ? null
-                                                                : hasBuilding
-                                                                    ? () async {
-                                                                        await _destroyBuilding(
-                                                                          cityName: cityName,
-                                                                          building: building!,
-                                                                          city: city,
-                                                                        );
-                                                                      }
-                                                                    : () => _showConstructMenu(city),
-
-                                                              style: ElevatedButton.styleFrom(
-                                                                backgroundColor: inAuction
-                                                                  ? Colors.grey[500]
-                                                                  : hasBuilding
-                                                                      ? const Color.fromARGB(255, 165, 12, 1)
-                                                                      : topColor,
-                                                                shape: RoundedRectangleBorder(
-                                                                  borderRadius: BorderRadius.circular(12),
+                                                          const SizedBox(height: 16),
+                                                          Center(
+                                                            
+                                                            child: 
+                                            
+                                                              ElevatedButton(
+                                                                onPressed: isSpecial
+                                                                  ? null
+                                                                  : (inAuction
+                                                                    ? null
+                                                                    : hasBuilding
+                                                                        ? () async {
+                                                                            await _destroyBuilding(
+                                                                              cityName: cityName,
+                                                                              building: building!,
+                                                                              city: city,
+                                                                            );
+                                                                          }
+                                                                        : () => _showConstructMenu(city)),
+      
+                                                                style: ElevatedButton.styleFrom(
+                                                                  backgroundColor: inAuction
+                                                                    ? Colors.grey[500]
+                                                                    : hasBuilding
+                                                                        ? const Color.fromARGB(255, 165, 12, 1)
+                                                                        : topColor,
+                                                                  shape: RoundedRectangleBorder(
+                                                                    borderRadius: BorderRadius.circular(12),
+                                                                  ),
+                                                                  padding: const EdgeInsets.symmetric(
+                                                                    horizontal: 32,
+                                                                    vertical: 12,
+                                                                  ),
                                                                 ),
-                                                                padding: const EdgeInsets.symmetric(
-                                                                  horizontal: 32,
-                                                                  vertical: 12,
+                                                                child: Text(
+                                                                    inAuction
+                                                                        ? 'In Auction'
+                                                                        : hasBuilding
+                                                                            ? 'Destroy'
+                                                                            : 'Construct',
+      
+                                                                  style: const TextStyle(
+                                                                    fontSize: 18,
+                                                                    color: Colors.white,
+                                                                  ),
                                                                 ),
                                                               ),
-                                                              child: Text(
-                                                                  inAuction
-                                                                      ? 'In Auction'
-                                                                      : hasBuilding
-                                                                          ? 'Destroy'
-                                                                          : 'Construct',
-
-                                                                style: const TextStyle(
-                                                                  fontSize: 18,
-                                                                  color: Colors.white,
-                                                                ),
-                                                              ),
-                                                            ),
-                                          
-                                                        ),
-                                                      ],
+                                            
+                                                          ),
+                                                        ],
+                                                      ),
                                                     ),
-                                                  ),
-                                                ],
+                                                  ],
+                                                ),
                                               ),
                                             ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                  );
-                                },
-                              );
-                            },
-                          ),
-                  ),
-
-
-                 
-                ],
+                                    );
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+      
+      
+                   
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

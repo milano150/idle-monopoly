@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'dart:math';
 
 import 'services/player_service.dart';
 
-/// Global session holder
 class LobbySession {
   static String lobbyCode = '';
 }
@@ -18,53 +16,28 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final TextEditingController _lobbyController = TextEditingController();
   final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _codeController = TextEditingController();
 
   bool _loading = false;
   String? _error;
-  
-  bool _isCreatingLobby = false;
-  String _createLobbyCode = '';
-  String _createSelectedMap = 'kerala';
+  bool _creating = false;
 
+  String _map = "kerala";
 
-  final List<Color> playerColors = [
-    Colors.red,
-    Colors.blue,
-    Colors.green,
-    Colors.orange,
-    Colors.purple,
-    Colors.teal,
-    Colors.indigo,
-    Colors.brown,
-    Colors.cyan,
-    Colors.pink,
+  final List<String> _maps = [
+    "kerala",
+    "india",
+    "kerala_extended",
   ];
 
-  final List<String> availableMaps = ['kerala', 'india','kerala_extended'];
-
-
-
-  late Color _selectedColor;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedColor = playerColors[Random().nextInt(playerColors.length)];
-  }
-
+  // ================= PLAY =================
   Future<void> _play() async {
-    final code = _lobbyController.text.trim().toUpperCase();
     final name = _nameController.text.trim();
+    final code = _codeController.text.trim().toUpperCase();
 
-    if (code.isEmpty) {
-      setState(() => _error = 'Enter lobby code');
-      return;
-    }
-
-    if (name.isEmpty) {
-      setState(() => _error = 'Enter player name');
+    if (name.isEmpty || code.isEmpty) {
+      setState(() => _error = "Enter name & code");
       return;
     }
 
@@ -74,351 +47,287 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      // 🔍 CHECK LOBBY EXISTS
       final lobbyRef =
           FirebaseDatabase.instance.ref('lobbies/$code');
-      final snapshot = await lobbyRef.get();
+      final snap = await lobbyRef.get();
 
-      if (!snapshot.exists) {
+      if (!snap.exists) {
         setState(() {
-          _error = 'No lobby found';
+          _error = "Lobby not found";
           _loading = false;
         });
         return;
       }
 
-      // ✅ SAVE SESSION
       LobbySession.lobbyCode = code;
 
-      // 🔐 AUTH
       final cred = await FirebaseAuth.instance.signInAnonymously();
       final uid = cred.user!.uid;
 
-      // 🌍 GLOBAL PLAYER
       await PlayerService.createGlobalPlayerIfNotExists(uid);
 
-      // ✍️ UPDATE GLOBAL NAME + COLOR
       await FirebaseDatabase.instance.ref('players/$uid').update({
         'name': name,
-        'colour': _selectedColor.value,
+        'colour': Colors.blue.value,
       });
 
-      // 🎮 JOIN LOBBY
       await PlayerService.joinLobby(
         name: name,
         lobbyCode: code,
         uid: uid,
-        colour: _selectedColor.value,
+        colour: Colors.blue.value,
       );
     } catch (e) {
-      setState(() {
-        _error = 'Something went wrong';
-      });
+      setState(() => _error = "Something went wrong");
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
+  // ================= CREATE =================
+  Future<void> _create() async {
+    final name = _nameController.text.trim();
+    final code = _codeController.text.trim().toUpperCase();
 
-
-
-  
-
-    Widget _primaryButton(
-  String text,
-  VoidCallback onPressed, {
-  Color color = Colors.blue,
-}) {
-  return SizedBox(
-    width: double.infinity,
-    height: 54,
-    child: ElevatedButton(
-      onPressed: _loading ? null : onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: color,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-      ),
-      child: _loading
-          ? const SizedBox(
-              height: 20,
-              width: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Colors.white,
-              ),
-            )
-          : Text(
-              text,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-              
-            ),
-    ),
-  );
-}
-
-
-
-
-  Future<void> _createLobbyCustom() async {
-  final name = _nameController.text.trim();
-  final code = _createLobbyCode;
-
-  if (name.isEmpty) {
-    setState(() => _error = 'Enter player name');
-    return;
-  }
-
-  if (code.isEmpty) {
-    setState(() => _error = 'Enter lobby code');
-    return;
-  }
-
-  setState(() {
-    _loading = true;
-    _error = null;
-  });
-
-  try {
-    final lobbyRef =
-        FirebaseDatabase.instance.ref('lobbies/$code');
-
-    final snapshot = await lobbyRef.get();
-    if (snapshot.exists) {
-      setState(() {
-        _error = 'Lobby already exists';
-        _loading = false;
-      });
+    if (name.isEmpty || code.isEmpty) {
+      setState(() => _error = "Enter name & code");
       return;
     }
 
-    final cred = await FirebaseAuth.instance.signInAnonymously();
-    final uid = cred.user!.uid;
-
-    await lobbyRef.set({
-      'createdAt': DateTime.now().millisecondsSinceEpoch,
-      'map': _createSelectedMap,
+    setState(() {
+      _loading = true;
+      _error = null;
     });
 
-    LobbySession.lobbyCode = code;
+    try {
+      final ref = FirebaseDatabase.instance.ref('lobbies/$code');
 
-    await PlayerService.createGlobalPlayerIfNotExists(uid);
+      if ((await ref.get()).exists) {
+        setState(() {
+          _error = "Lobby exists";
+          _loading = false;
+        });
+        return;
+      }
 
-    await FirebaseDatabase.instance.ref('players/$uid').update({
-      'name': name,
-      'colour': _selectedColor.value,
-    });
+      final cred = await FirebaseAuth.instance.signInAnonymously();
+      final uid = cred.user!.uid;
 
-    await PlayerService.joinLobby(
-      name: name,
-      lobbyCode: code,
-      uid: uid,
-      colour: _selectedColor.value,
-    );
-  } catch (e) {
-    setState(() => _error = 'Failed to create lobby');
-  } finally {
-    if (mounted) setState(() => _loading = false);
+      await ref.set({
+        'createdAt': DateTime.now().millisecondsSinceEpoch,
+        'map': _map,
+      });
+
+      LobbySession.lobbyCode = code;
+
+      await PlayerService.createGlobalPlayerIfNotExists(uid);
+
+      await FirebaseDatabase.instance.ref('players/$uid').update({
+        'name': name,
+        'colour': Colors.blue.value,
+      });
+
+      await PlayerService.joinLobby(
+        name: name,
+        lobbyCode: code,
+        uid: uid,
+        colour: Colors.blue.value,
+      );
+    } catch (e) {
+      setState(() => _error = "Failed to create");
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
-}
 
-
-  Widget _buildJoinCard() {
-  return _buildCard(
-    title: "JOIN GAME",
-    child: Column(  
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        TextField(
-          controller: _nameController,
-          decoration: const InputDecoration(labelText: 'Player Name'),
-        ),
-
-        const SizedBox(height: 16),
-
-        TextField(
-          controller: _lobbyController,
-          textCapitalization: TextCapitalization.characters,
-          decoration: const InputDecoration(labelText: 'Lobby Code'),
-        ),
-
-        const SizedBox(height: 20),
-
-        _colorPicker(),
-
-        const SizedBox(height: 28),
-
-        _primaryButton("PLAY", _play),
-
-        const SizedBox(height: 16),
-
-        _primaryButton(
-          "CREATE LOBBY",
-          () {
-            setState(() {
-              _isCreatingLobby = true;
-              _error = null;
-            });
-          },
-          color: Colors.green,
-        ),
-
-
-        if (_error != null) ...[
-          const SizedBox(height: 16),
-          Text(_error!, style: const TextStyle(color: Colors.red)),
+  // ================= INPUT =================
+  Widget _input(String hint, TextEditingController c) {
+    return Container(
+      width: 300,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 10,
+          )
         ],
-      ],
-    ),
-  );
-}
-
-Widget _buildCreateCard() {
-  final codeController = TextEditingController(text: _createLobbyCode);
-
-  return _buildCard(
-    title: "CREATE LOBBY",
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        TextField(
-          controller: _nameController,
-          decoration: const InputDecoration(labelText: 'Player Name'),
-        ),
-
-        const SizedBox(height: 16),
-
-        TextField(
-          controller: codeController,
-          textCapitalization: TextCapitalization.characters,
-          decoration: const InputDecoration(labelText: 'Lobby Code'),
-          onChanged: (val) {
-            _createLobbyCode = val.trim().toUpperCase();
-          },
-        ),
-
-        const SizedBox(height: 16),
-
-        DropdownButtonFormField<String>(
-          value: _createSelectedMap,
-          decoration: const InputDecoration(labelText: "Select Map"),
-          items: const [
-            DropdownMenuItem(value: 'kerala', child: Text('Kerala')),
-            DropdownMenuItem(value: 'india', child: Text('India')),
-            DropdownMenuItem(value: 'kerala_extended', child: Text('Kerala Extended')),
-          ],
-          onChanged: (value) {
-            setState(() => _createSelectedMap = value!);
-          },
-        ),
-
-        const SizedBox(height: 20),
-
-        _colorPicker(),
-
-        const SizedBox(height: 28),
-
-        _primaryButton("CREATE", _createLobbyCustom),
-
-        const SizedBox(height: 12),
-
-        _primaryButton(
-          "JOIN EXISTING LOBBY",
-          () {
-            setState(() {
-              _isCreatingLobby = false;
-              _error = null;
-            });
-          },
-          color: Colors.pinkAccent,
-        ),
-
-  
-
-        if (_error != null) ...[
-          const SizedBox(height: 16),
-          Text(_error!, style: const TextStyle(color: Colors.red)),
-        ],
-      ],
-    ),
-  );
-}
-
-Widget _buildCard({required String title, required Widget child}) {
-  return Container(
-    key: ValueKey(title),
-    margin: const EdgeInsets.all(16),
-    padding: const EdgeInsets.all(24),
-    width: 420,
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: Colors.blue.shade700, width: 3),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withOpacity(0.15),
-          blurRadius: 12,
-          offset: const Offset(0, 6),
-        ),
-      ],
-    ),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 34,
-            fontWeight: FontWeight.w800,
-            color: Colors.blue,
-            letterSpacing: 1.5,
+      ),
+      child: TextField(
+        controller: c,
+        textAlign: TextAlign.center,
+        style: const TextStyle(color: Colors.white, fontSize: 16),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: const TextStyle(color: Colors.white54),
+          filled: true,
+          fillColor: const Color(0xFF1E293B),
+          contentPadding: const EdgeInsets.symmetric(vertical: 18),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(30),
+            borderSide: BorderSide.none,
           ),
         ),
-        const SizedBox(height: 24),
-        child,
-      ],
-    ),
-  );
-}
+      ),
+    );
+  }
 
-Widget _colorPicker() {
-  return Wrap(
-    spacing: 10,
-    children: playerColors.map((color) {
-      final selected = color == _selectedColor;
-      return GestureDetector(
-        onTap: () {
-          setState(() => _selectedColor = color);
-        },
-        child: CircleAvatar(
-          radius: selected ? 20 : 18,
-          backgroundColor: color,
-          child: selected
-              ? const Icon(Icons.check, color: Colors.white)
-              : null,
+  // ================= BUTTON =================
+  Widget _bigButton(String text, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: _loading ? null : onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        width: 280,
+        height: 64,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF3B82F6), Color(0xFF1D4ED8)],
+          ),
+          borderRadius: BorderRadius.circular(40),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.blue.withOpacity(0.6),
+              blurRadius: 25,
+              offset: const Offset(0, 8),
+            )
+          ],
         ),
-      );
-    }).toList(),
-  );
-}
+        child: Center(
+          child: _loading
+              ? const CircularProgressIndicator(color: Colors.white)
+              : Text(
+                  text,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                    color: Colors.white,
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
 
+  Widget _secondaryButton(String text, VoidCallback onTap) {
+    return TextButton(
+      onPressed: onTap,
+      child: Text(
+        text,
+        style: const TextStyle(color: Colors.white70),
+      ),
+    );
+  }
 
+  // ================= MAP SELECTOR =================
+  Widget _mapSelector() {
+    return Container(
+      width: 280,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(30),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _map,
+          dropdownColor: const Color(0xFF0F172A),
+          style: const TextStyle(color: Colors.white),
+          isExpanded: true,
+          items: _maps.map((map) {
+            return DropdownMenuItem(
+              value: map,
+              child: Text(
+                map.toUpperCase(),
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            );
+          }).toList(),
+          onChanged: (value) {
+            setState(() => _map = value!);
+          },
+        ),
+      ),
+    );
+  }
 
+  // ================= BUILD =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF2F4F8),
-      body: Center(
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
-          child: _isCreatingLobby ? _buildCreateCard() : _buildJoinCard(),
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            colors: [
+              Color(0xFF0F172A),
+              Color(0xFF020617),
+            ],
+            radius: 1.2,
+          ),
         ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Spacer(),
 
+            const Text(
+              "urban.idle",
+              style: TextStyle(
+                fontSize: 44,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+                letterSpacing: 2,
+              ),
+            ),
+
+            const SizedBox(height: 60),
+
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: Column(
+                key: ValueKey(_creating),
+                children: [
+                  _input("PLAYER NAME", _nameController),
+                  const SizedBox(height: 18),
+
+                  _input("LOBBY CODE", _codeController),
+
+                  if (_creating) ...[
+                    const SizedBox(height: 18),
+                    _mapSelector(),
+                  ],
+
+                  const SizedBox(height: 30),
+
+                  _bigButton(
+                    _creating ? "CREATE GAME" : "PLAY",
+                    _creating ? _create : _play,
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  _secondaryButton(
+                    _creating ? "JOIN INSTEAD" : "CREATE GAME",
+                    () => setState(() => _creating = !_creating),
+                  ),
+
+                  if (_error != null) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      _error!,
+                      style: const TextStyle(color: Colors.redAccent),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            const Spacer(),
+          ],
+        ),
       ),
     );
   }

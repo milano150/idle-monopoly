@@ -140,4 +140,98 @@ List<CityModel> indiaMap = [
     state: 'West Bengal',
     color: Colors.teal,
   ),
+
+  // ================= RAILWAYS =================
+
+CityModel(
+  name: 'Northern Rail Line',
+  cost: 300,
+  rent: 50,
+  state: 'Railway',
+  color: Colors.black,
+  type: PropertyType.railway,
+),
+
+CityModel(
+  name: 'Southern Rail Line',
+  cost: 300,
+  rent: 50,
+  state: 'Railway',
+  color: Colors.black,
+  type: PropertyType.railway,
+),
+
+CityModel(
+  name: 'Eastern Rail Corridor',
+  cost: 300,
+  rent: 50,
+  state: 'Railway',
+  color: Colors.black,
+  type: PropertyType.railway,
+),
+
+CityModel(
+  name: 'Western Rail Route',
+  cost: 300,
+  rent: 50,
+  state: 'Railway',
+  color: Colors.black,
+  type: PropertyType.railway,
+),
+
+CityModel(
+  name: 'Central Rail Network',
+  cost: 300,
+  rent: 50,
+  state: 'Railway',
+  color: Colors.black,
+  type: PropertyType.railway,
+),
+
+CityModel(
+  name: 'Coastal Rail Line',
+  cost: 300,
+  rent: 50,
+  state: 'Railway',
+  color: Colors.black,
+  type: PropertyType.railway,
+),
+
+// ================= AIRPORTS =================
+
+  CityModel(
+    name: 'Delhi International Airport',
+    cost: 500,
+    rent: 150,
+    state: 'Airport',
+    color: Colors.grey,
+    type: PropertyType.airport,
+  ),
+
+  CityModel(
+    name: 'Mumbai International Airport',
+    cost: 500,
+    rent: 150,
+    state: 'Airport',
+    color: Colors.grey,
+    type: PropertyType.airport,
+  ),
+
+  CityModel(
+    name: 'Bangalore International Airport',
+    cost: 500,
+    rent: 150,
+    state: 'Airport',
+    color: Colors.grey,
+    type: PropertyType.airport,
+  ),
+
+  CityModel(
+    name: 'Hyderabad International Airport',
+    cost: 500,
+    rent: 150,
+    state: 'Airport',
+    color: Colors.grey,
+    type: PropertyType.airport,
+  ),
 ];

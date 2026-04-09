@@ -29,6 +29,7 @@ class _MarketPageState extends State<MarketPage> {
   static const int auctionDurationMs = 5000; //30 * 60 * 1000; // 30 minutes
 
 
+
   Color getCityColor(Map<String, dynamic> cityData) {
   if (cityData['color'] != null) {
     return Color(cityData['color']);
@@ -351,7 +352,7 @@ class _MarketPageState extends State<MarketPage> {
           shrinkWrap: true,
           children: [
             const Text(
-              'Select City',
+              'Select Property',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -887,7 +888,7 @@ class _MarketPageState extends State<MarketPage> {
     if (publicAuctions.isEmpty) {
       return const Center(
         child: Text(
-          'No public auctions!',
+          '',
           style:
               TextStyle(fontSize: 18, color: Colors.black54),
         ),

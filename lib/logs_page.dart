@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:test/widgets/loading_wrapper.dart';
 import 'login_screen.dart';
 
 class LogsPage extends StatefulWidget {
@@ -19,6 +20,7 @@ class _LogsPageState extends State<LogsPage>
   Map<String, Color> _playerColors = {};
   Map<String, Color> _cityColors = {};
   int _coins = 0;
+  bool _coinsLoaded = false;
 
   String get lobbyCode => LobbySession.lobbyCode;
 
@@ -56,6 +58,7 @@ class _LogsPageState extends State<LogsPage>
       setState(() {
         _playerColors = colors;
         _coins = myCoins;
+        _coinsLoaded = true;
       });
     });
   }
@@ -97,149 +100,152 @@ class _LogsPageState extends State<LogsPage>
     final logsRef =
         FirebaseDatabase.instance.ref('lobbies/$lobbyCode/logs');
 
-    return Scaffold(
-      backgroundColor: Colors.green[50],
-      body: Column(
-        children: [
-          // 🔷 TOP BAR (UNCHANGED)
-          Container(
-            height: 70,
-            width: double.infinity,
-            color: Colors.indigo,
-            alignment: Alignment.center,
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Text(
-                '$_coins 🪙',
-                style: const TextStyle(
-                  fontSize: 20,
-                  color: Colors.black,
+    return LoadingWrapper(
+      isLoaded: _coinsLoaded,
+      child: Scaffold(
+        backgroundColor: Colors.green[50],
+        body: Column(
+          children: [
+            // 🔷 TOP BAR (UNCHANGED)
+            Container(
+              height: 70,
+              width: double.infinity,
+              color: Colors.indigo,
+              alignment: Alignment.center,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  '$_coins 🪙',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    color: Colors.black,
+                  ),
                 ),
               ),
             ),
-          ),
-
-          // 📜 LOGS
-          Expanded(
-            child: StreamBuilder<DatabaseEvent>(
-              stream: logsRef.orderByChild('timestamp').onValue,
-              builder: (context, snapshot) {
-                if (!snapshot.hasData ||
-                    snapshot.data!.snapshot.value == null) {
-                  return const Center(
-                    child: Text('No game activity yet'),
-                  );
-                }
-
-                final map =
-                    snapshot.data!.snapshot.value as Map<dynamic, dynamic>;
-
-                final logs = map.values.toList();
-
-                // Sort oldest → newest
-                logs.sort((a, b) =>
-                    (a['timestamp'] ?? 0)
-                        .compareTo(b['timestamp'] ?? 0));
-
-                // Scroll after frame
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _scrollToBottom();
-                });
-
-                return ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(12),
-                  itemCount: logs.length,
-                  itemBuilder: (context, index) {
-                    final text = logs[index]['text'] ?? '';
-                    final words = text.split(' ');
-
-                    return TweenAnimationBuilder<double>(
-                      duration: const Duration(milliseconds: 400),
-                      tween: Tween(begin: 0, end: 1),
-                      curve: Curves.easeOut,
-                      builder: (context, value, child) {
-                        return Opacity(
-                          opacity: value,
-                          child: Transform.translate(
-                            offset: Offset(0, 20 * (1 - value)),
-                            child: child,
-                          ),
-                        );
-                      },
-                      child: Container(
-                        margin:
-                            const EdgeInsets.symmetric(vertical: 6),
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius:
-                              BorderRadius.circular(14),
-                          boxShadow: [
-                            BoxShadow(
-                              color:
-                                  Colors.black.withOpacity(0.08),
-                              blurRadius: 6,
-                              offset: const Offset(0, 3),
-                            ),
-                          ],
-                        ),
-                        child: RichText(
-                          text: TextSpan(
-                            style: const TextStyle(
-                              fontSize: 15,
-                              color: Colors.black87,
-                            ),
-                            children:
-                                words.map<InlineSpan>((word) {
-                              final cleanWord = word
-                                  .replaceAll(
-                                      RegExp(r'[^\w]'), '');
-
-                              if (_playerColors
-                                  .containsKey(cleanWord)) {
-                                return TextSpan(
-                                  text: '$word ',
-                                  style: TextStyle(
-                                    fontWeight:
-                                        FontWeight.bold,
-                                    color: _playerColors[
-                                        cleanWord],
-                                  ),
-                                );
-                              }
-
-                              if (_cityColors
-                                  .containsKey(cleanWord)) {
-                                return TextSpan(
-                                  text: '$word ',
-                                  style: TextStyle(
-                                    fontWeight:
-                                        FontWeight.bold,
-                                    color: _cityColors[
-                                        cleanWord],
-                                  ),
-                                );
-                              }
-
-                              return TextSpan(
-                                  text: '$word ');
-                            }).toList(),
-                          ),
-                        ),
-                      ),
+      
+            // 📜 LOGS
+            Expanded(
+              child: StreamBuilder<DatabaseEvent>(
+                stream: logsRef.orderByChild('timestamp').onValue,
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData ||
+                      snapshot.data!.snapshot.value == null) {
+                    return const Center(
+                      child: Text(''),
                     );
-                  },
-                );
-              },
+                  }
+      
+                  final map =
+                      snapshot.data!.snapshot.value as Map<dynamic, dynamic>;
+      
+                  final logs = map.values.toList();
+      
+                  // Sort oldest → newest
+                  logs.sort((a, b) =>
+                      (a['timestamp'] ?? 0)
+                          .compareTo(b['timestamp'] ?? 0));
+      
+                  // Scroll after frame
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _scrollToBottom();
+                  });
+      
+                  return ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(12),
+                    itemCount: logs.length,
+                    itemBuilder: (context, index) {
+                      final text = logs[index]['text'] ?? '';
+                      final words = text.split(' ');
+      
+                      return TweenAnimationBuilder<double>(
+                        duration: const Duration(milliseconds: 400),
+                        tween: Tween(begin: 0, end: 1),
+                        curve: Curves.easeOut,
+                        builder: (context, value, child) {
+                          return Opacity(
+                            opacity: value,
+                            child: Transform.translate(
+                              offset: Offset(0, 20 * (1 - value)),
+                              child: child,
+                            ),
+                          );
+                        },
+                        child: Container(
+                          margin:
+                              const EdgeInsets.symmetric(vertical: 6),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius:
+                                BorderRadius.circular(14),
+                            boxShadow: [
+                              BoxShadow(
+                                color:
+                                    Colors.black.withOpacity(0.08),
+                                blurRadius: 6,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: RichText(
+                            text: TextSpan(
+                              style: const TextStyle(
+                                fontSize: 15,
+                                color: Colors.black87,
+                              ),
+                              children:
+                                  words.map<InlineSpan>((word) {
+                                final cleanWord = word
+                                    .replaceAll(
+                                        RegExp(r'[^\w]'), '');
+      
+                                if (_playerColors
+                                    .containsKey(cleanWord)) {
+                                  return TextSpan(
+                                    text: '$word ',
+                                    style: TextStyle(
+                                      fontWeight:
+                                          FontWeight.bold,
+                                      color: _playerColors[
+                                          cleanWord],
+                                    ),
+                                  );
+                                }
+      
+                                if (_cityColors
+                                    .containsKey(cleanWord)) {
+                                  return TextSpan(
+                                    text: '$word ',
+                                    style: TextStyle(
+                                      fontWeight:
+                                          FontWeight.bold,
+                                      color: _cityColors[
+                                          cleanWord],
+                                    ),
+                                  );
+                                }
+      
+                                return TextSpan(
+                                    text: '$word ');
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
