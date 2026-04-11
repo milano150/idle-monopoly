@@ -282,74 +282,70 @@ class _PlayerListPageState extends State<PlayerListPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.blue[50],
-      body: Stack(
-        children: [
-          // ---------- TOP BAR (UNCHANGED STYLE) ----------
-          SafeArea(
-            bottom: false,
-            child: Container(
-              height: 70,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              color: Colors.indigo,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // Toggle
-                  Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      children: [
-                        _toggleButton(
-                          label: 'Players',
-                          selected: showPlayers,
-                          onTap: () =>
-                              setState(() => showPlayers = true),
-                        ),
-                        _toggleButton(
-                          label: 'Properties',
-                          selected: !showPlayers,
-                          onTap: () =>
-                              setState(() => showPlayers = false),
-                        ),
-                      ],
-                    ),
-                  ),
+      body: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Column(
+          children: [
 
-                  // Count
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      showPlayers
-                          ? '${players.length} Players'
-                          : '${properties.length} Properties',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+            // 🔥 TOP ROW (toggle + count)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+
+                // 👈 LEFT PADDING FIX INCLUDED HERE
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    children: [
+                      _toggleButton(
+                        label: 'Players',
+                        selected: showPlayers,
+                        onTap: () => setState(() => showPlayers = true),
                       ),
+                      _toggleButton(
+                        label: 'Properties',
+                        selected: !showPlayers,
+                        onTap: () => setState(() => showPlayers = false),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // 📊 COUNT
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    showPlayers
+                        ? '${players.length} Players'
+                        : '${properties.length} Properties',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ),
 
-          // ---------- CONTENT ----------
-          Padding(
-            padding: const EdgeInsets.only(top: 90),
-            child: showPlayers
-                ? _buildPlayersList()
-                : _buildPropertiesList(),
-          ),
-        ],
+            const SizedBox(height: 10),
+
+            // 🔥 CONTENT
+            Expanded(
+              child: showPlayers
+                  ? _buildPlayersList()
+                  : _buildPropertiesList(),
+            ),
+          ],
+        ),
       ),
     );
   }

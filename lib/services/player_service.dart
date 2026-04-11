@@ -1,7 +1,8 @@
 import 'package:firebase_database/firebase_database.dart';
 
 class PlayerService {
-  static final _db = FirebaseDatabase.instance.ref();
+  static DatabaseReference get _db =>
+      FirebaseDatabase.instance.ref();
 
   // Global profile
   static Future<void> createGlobalPlayerIfNotExists(String uid) async {
@@ -17,7 +18,7 @@ class PlayerService {
     }
   }
 
-  // Join EXISTING lobby with name + colour
+  // Join EXISTING lobby
   static Future<void> joinLobby({
     required String lobbyCode,
     required String uid,

@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:test/widgets/loading_wrapper.dart';
 import 'login_screen.dart';
+import 'lobby_session.dart';
 
 class LogsPage extends StatefulWidget {
   const LogsPage({super.key});
@@ -103,31 +104,10 @@ class _LogsPageState extends State<LogsPage>
     return LoadingWrapper(
       isLoaded: _coinsLoaded,
       child: Scaffold(
-        backgroundColor: Colors.green[50],
+        backgroundColor: Colors.blue[50],
         body: Column(
           children: [
-            // 🔷 TOP BAR (UNCHANGED)
-            Container(
-              height: 70,
-              width: double.infinity,
-              color: Colors.indigo,
-              alignment: Alignment.center,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text(
-                  '$_coins 🪙',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    color: Colors.black,
-                  ),
-                ),
-              ),
-            ),
+            
       
             // 📜 LOGS
             Expanded(

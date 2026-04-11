@@ -26,7 +26,7 @@ class _MarketPageState extends State<MarketPage> {
   int coins = 0;
   List<Map<String, dynamic>> ownedCities = [];
   String playerName = 'Player';
-  static const int auctionDurationMs = 5000; //30 * 60 * 1000; // 30 minutes
+  static const int auctionDurationMs = 30 * 60 * 1000; // 30 minutes
 
 
 
@@ -395,6 +395,9 @@ class _MarketPageState extends State<MarketPage> {
   @override
   void initState() {
     super.initState();
+
+    publicAuctions = [];
+
     _listenToCoins();
     _listenToMarket();
     _listenToOwnedCities();
@@ -437,38 +440,51 @@ class _MarketPageState extends State<MarketPage> {
 
   // ---------------- MARKET DATA ----------------
   void _listenToMarket() {
-    lobbyRef.child('market').onValue.listen((event) {
-      final raw = event.snapshot.value as Map?;
-      if (raw == null) {
-        setState(() {
-          publicAuctions = [];
-          privateTrades = [];
-        });
-        return;
-      }
+  final marketRef = lobbyRef.child('market');
 
-      final List<Map<String, dynamic>> pub = [];
-      final List<Map<String, dynamic>> priv = [];
+  // 🔥 NEW AUCTION
+  marketRef.onChildAdded.listen((event) {
+    final data = event.snapshot.value;
+    if (data == null) return;
 
-      raw.forEach((id, data) {
-        if (data is! Map) return;
+    final item = Map<String, dynamic>.from(data as Map);
+    item['id'] = event.snapshot.key;
 
-        final item = Map<String, dynamic>.from(data);
-        item['id'] = id;
+    if (item['type'] != 'public') return;
 
-        if (item['type'] == 'public') {
-          pub.add(item);
-        } else if (item['type'] == 'private') {
-          priv.add(item);
-        }
-      });
-
-      setState(() {
-        publicAuctions = pub;
-        privateTrades = priv;
-      });
+    setState(() {
+      publicAuctions.add(item);
     });
-  }
+  });
+
+  // 🔄 UPDATE AUCTION (bids etc)
+  marketRef.onChildChanged.listen((event) {
+    final data = event.snapshot.value;
+    if (data == null) return;
+
+    final updated = Map<String, dynamic>.from(data as Map);
+    updated['id'] = event.snapshot.key;
+
+    setState(() {
+      final index = publicAuctions.indexWhere(
+        (a) => a['id'] == updated['id'],
+      );
+
+      if (index != -1) {
+        publicAuctions[index] = updated;
+      }
+    });
+  });
+
+  // ❌ REMOVE AUCTION
+  marketRef.onChildRemoved.listen((event) {
+    setState(() {
+      publicAuctions.removeWhere(
+        (a) => a['id'] == event.snapshot.key,
+      );
+    });
+  });
+}
 
   Future<void> createPrivateTrade({
     required String targetPlayerId,
@@ -553,11 +569,10 @@ class _MarketPageState extends State<MarketPage> {
         await lobbyRef.child('players/$playerBId/coins').get();
 
     final int currentACoins =
-        (snapA.value as int?) ?? 0;
+    int.tryParse(snapA.value.toString()) ?? 0;
 
     final int currentBCoins =
-        (snapB.value as int?) ?? 0;
-
+        int.tryParse(snapB.value.toString()) ?? 0;
 
     
     
@@ -605,6 +620,9 @@ class _MarketPageState extends State<MarketPage> {
       final inMarket = data['inMarket'] == true;
 
       if (owner != playerAId || inMarket) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("$city is no longer valid")),
+        );
         return;
       }
     }
@@ -623,6 +641,9 @@ class _MarketPageState extends State<MarketPage> {
       final inMarket = data['inMarket'] == true;
 
       if (owner != playerBId || inMarket) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("$city is no longer valid")),
+        );
         return;
       }
     }
@@ -659,6 +680,10 @@ class _MarketPageState extends State<MarketPage> {
     await db.update(updates);
     await lobbyRef.child('trades/$tradeId').remove();
 
+    setState(() {
+      privateTrades.removeWhere((t) => t['id'] == tradeId);
+    });
+
 
     await LogService.add(
       lobbyCode: widget.lobbyCode,
@@ -690,6 +715,10 @@ class _MarketPageState extends State<MarketPage> {
     if (playerA['id'] != widget.playerId) return;
 
     await lobbyRef.child('trades/$tradeId').remove();
+
+    setState(() {
+      privateTrades.removeWhere((t) => t['id'] == tradeId);
+    });
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -785,11 +814,45 @@ class _MarketPageState extends State<MarketPage> {
           : _openTradeBuilder,
     ),
 
-      body: Stack(
+      body: Column(
         children: [
-          _buildTopBar(),
+
+          const SizedBox(height: 10),
+
+          // 🔥 TOGGLE (TOP LEFT NOW)
           Padding(
-            padding: const EdgeInsets.only(top: 90),
+            padding: const EdgeInsets.only(left: 12),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    children: [
+                      _toggleButton(
+                        label: 'Public',
+                        selected: showPublic,
+                        onTap: () => setState(() => showPublic = true),
+                      ),
+                      _toggleButton(
+                        label: 'Private',
+                        selected: !showPublic,
+                        onTap: () => setState(() => showPublic = false),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 10),
+
+          // 🔥 CONTENT
+          Expanded(
             child: showPublic
                 ? _buildPublicMarket()
                 : _buildPrivateTrades(),
@@ -799,61 +862,7 @@ class _MarketPageState extends State<MarketPage> {
     );
   }
 
-  // ---------------- TOP BAR ----------------
-  Widget _buildTopBar() {
-    return SafeArea(
-      bottom: false,
-      child: Container(
-        height: 70,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        color: Colors.indigo,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            // Toggle (same as ListPage)
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                children: [
-                  _toggleButton(
-                    label: 'Public',
-                    selected: showPublic,
-                    onTap: () => setState(() => showPublic = true),
-                  ),
-                  _toggleButton(
-                    label: 'Private',
-                    selected: !showPublic,
-                    onTap: () => setState(() => showPublic = false),
-                  ),
-                ],
-              ),
-            ),
-
-            // Coins
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Text(
-                '$coins 🪙',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.normal,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  
 
   // ---------------- TOGGLE BUTTON ----------------
   Widget _toggleButton({
@@ -1060,7 +1069,7 @@ class _MarketPageState extends State<MarketPage> {
     if (privateTrades.isEmpty) {
       return const Center(
         child: Text(
-          'No private trades!',
+          '',
           style:
               TextStyle(fontSize: 18, color: Colors.black54),
         ),
@@ -1100,153 +1109,159 @@ class _MarketPageState extends State<MarketPage> {
                 ? List.from(playerB['properties'])
                 : [];
 
-        return Card(
-          elevation: 6,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
+        return Container(
+          margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: isOtherSide
+                    ? Colors.blue.withOpacity(0.5)   // 💙 incoming
+                    : Colors.indigo.withOpacity(0.3), // 👤 your trade
+                blurRadius: 18,
+                spreadRadius: 1,
+              ),
+            ],
           ),
-          margin: const EdgeInsets.symmetric(
-              vertical: 12, horizontal: 4),
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              children: [
+          child: Card(
+            elevation: 4,
+            color: isOtherSide ? Colors.blue[50] : Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+              side: BorderSide(
+                color: isOtherSide ? Colors.blue : Colors.indigo,
+                width: 2,
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
 
-                // Title
-                Row(
-                  mainAxisAlignment:
-                      MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      "TRADE OFFER",
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-                    if (isPending)
-                      const Text(
-                        "PENDING",
-                        style: TextStyle(
-                          color: Colors.orange,
+                  // 🔥 HEADER
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        isOtherSide ? "INCOMING TRADE" : "YOUR TRADE",
+                        style: const TextStyle(
                           fontWeight: FontWeight.bold,
+                          letterSpacing: 1.2,
+                          fontSize: 14,
                         ),
                       ),
-                  ],
-                ),
+                      if (isPending)
+                        const Text(
+                          "PENDING",
+                          style: TextStyle(
+                            color: Colors.orange,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                    ],
+                  ),
 
-                const SizedBox(height: 20),
+                  const SizedBox(height: 16),
 
-                // TABLE LAYOUT
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildTradeSide(
-                        playerName: playerA['name'],
-                        coins: playerA['coins'],
-                        properties: propertiesA,
-                        highlight:
-                            widget.playerId == playerAId,
-                      ),
-                    ),
-
-                    const Padding(
-                      padding: EdgeInsets.symmetric(
-                          horizontal: 12),
-                      child: Icon(
-                        Icons.swap_horiz,
-                        size: 30,
-                        color: Colors.grey,
-                      ),
-                    ),
-
-                    Expanded(
-                      child: _buildTradeSide(
-                        playerName: playerB['name'],
-                        coins: playerB['coins'],
-                        properties: propertiesB,
-                        highlight:
-                            widget.playerId == playerBId,
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 18),
-
-                if (isPending && isOtherSide)
+                  // 🔥 TRADE CONTENT
                   Row(
                     children: [
                       Expanded(
-                        child: ElevatedButton(
-                          onPressed: () =>
-                              acceptTrade(t['id']),
-                          style:
-                              ElevatedButton.styleFrom(
-                            backgroundColor:
-                                Colors.green,
-                            shape:
-                                RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(
-                                      12),
-                            ),
-                          ),
-                          child:
-                              const Text("Accept"),
+                        child: _buildTradeSide(
+                          playerName: playerA['name'],
+                          coins: playerA['coins'],
+                          properties: propertiesA,
+                          highlight: widget.playerId == playerAId,
                         ),
                       ),
-                      const SizedBox(width: 12),
+
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 10),
+                        child: Icon(
+                          Icons.swap_horiz,
+                          size: 28,
+                          color: Colors.grey,
+                        ),
+                      ),
+
                       Expanded(
-                        child: ElevatedButton(
-                          onPressed: () =>
-                              rejectTrade(t['id']),
-                          style:
-                              ElevatedButton.styleFrom(
-                            backgroundColor:
-                                Colors.red,
-                            shape:
-                                RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(
-                                      12),
-                            ),
-                          ),
-                          child:
-                              const Text("Decline"),
+                        child: _buildTradeSide(
+                          playerName: playerB['name'],
+                          coins: playerB['coins'],
+                          properties: propertiesB,
+                          highlight: widget.playerId == playerBId,
                         ),
                       ),
                     ],
                   ),
 
-                if (isPending && isCreator)
-                  Column(
-                    children: [
-                      const Text(
-                        "Waiting for other player...",
-                        style: TextStyle(
-                          color: Colors.orange,
-                          fontWeight: FontWeight.w600,
+                  const SizedBox(height: 16),
+
+                  // 🔥 ACTION BUTTONS
+                  if (isPending && isOtherSide)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () async {
+                              await acceptTrade(t['id']);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: const Text("Accept"),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: () => cancelTrade(t['id']),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.indigo[700],
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () => rejectTrade(t['id']),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: const Text("Decline"),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                  if (isPending && isCreator)
+                    Column(
+                      children: [
+                        const Text(
+                          "Waiting for other player...",
+                          style: TextStyle(
+                            color: Colors.orange,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: () => cancelTrade(t['id']),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.indigo,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: const Text(
+                              "Cancel Trade",
+                              style: TextStyle(color: Colors.white),
                             ),
                           ),
-                          child: const Text("Cancel Trade", style: TextStyle(color: Colors.white),),
                         ),
-                      ),
-                    ],
-                  ),
-
-              ],
+                      ],
+                    ),
+                ],
+              ),
             ),
           ),
         );

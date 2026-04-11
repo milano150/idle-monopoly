@@ -7,7 +7,6 @@ import 'properties.dart';
 import 'map.dart';
 import 'services/auth_service.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
-import 'auth_gate.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'login_screen.dart';
 import 'listpage.dart';
@@ -19,24 +18,39 @@ import 'package:test/data/map_model.dart';
 import 'package:test/data/map_registry.dart';
 import 'services/global_notification_service.dart';
 import 'dart:async';
+import 'package:flutter/services.dart';
+import 'lobby_session.dart';
+import 'lobby_screen.dart';
+import 'login_screen.dart';
 
 
 
 
 
-
+import 'package:flutter/foundation.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
+
+  SystemChrome.setEnabledSystemUIMode(
+    SystemUiMode.immersiveSticky,
   );
 
-  await FirebaseAuth.instance.signOut(); //TEMPORARY LOG OUT EVERY RESTART
+  if (kIsWeb) {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } else {
+    await Firebase.initializeApp();
+  }
+
+  await FirebaseAuth.instance.signOut(); //remove for auto sign in
+
+
+  FirebaseDatabase.instance.databaseURL = "https://lander-ac66f-default-rtdb.asia-southeast1.firebasedatabase.app";
 
   runApp(const MyApp());
 }
-
 
 
 
@@ -68,7 +82,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
-      home: AuthGate(),
+      home: const LoginScreen(),
     );
   }
 }
@@ -76,6 +90,7 @@ class MyApp extends StatelessWidget {
 class MainScaffold extends StatefulWidget {
   final String playerId;
   const MainScaffold({super.key, required this.playerId});
+  
 
   @override
   State<MainScaffold> createState() => _MainScaffoldState();
@@ -83,6 +98,11 @@ class MainScaffold extends StatefulWidget {
 
 class _MainScaffoldState extends State<MainScaffold> {
   int _selectedIndex = 2; //main page
+  final PageController _pageController = PageController(initialPage: 2);
+  int coins = 0;
+
+  String playerName = "Player";
+  Color playerColor = Colors.blue;
 
   void _listenToGlobalEvents() {
     final myId = widget.playerId;
@@ -106,49 +126,306 @@ class _MainScaffoldState extends State<MainScaffold> {
       // 🔥 remove after showing (one-time popup)
       await event.snapshot.ref.remove();
     });
+
+    
+  }
+
+  void _leaveLobby() {
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LobbyScreen(
+          uid: widget.playerId,
+          username: "Player", // temp (we’ll improve below)
+        ),
+      ),
+      (route) => false,
+    );
+  }
+
+  Future<void> _logout() async {
+    await FirebaseAuth.instance.signOut();
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const LoginScreen(),
+      ),
+      (route) => false,
+    );
+  }
+
+  void _openProfileEditor() {
+    final nameController = TextEditingController(text: playerName);
+    Color selectedColor = playerColor;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+
+                  const Text(
+                    'Edit Profile',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Username',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  HueRingPicker(
+                    pickerColor: selectedColor,
+                    onColorChanged: (color) {
+                      setModalState(() => selectedColor = color);
+                    },
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  ElevatedButton(
+                    onPressed: () async {
+                      await FirebaseDatabase.instance
+                          .ref('lobbies/${LobbySession.lobbyCode}/players/${widget.playerId}')
+                          .update({
+                        'name': nameController.text.trim(),
+                        'colour': selectedColor.value,
+                      });
+
+                      Navigator.pop(context);
+                    },
+                    child: const Text('Save'),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
   void initState() {
     super.initState();
     _listenToGlobalEvents();
+
+    FirebaseDatabase.instance
+      .ref('lobbies/${LobbySession.lobbyCode}/players/${widget.playerId}')
+      .onValue
+      .listen((event) {
+
+      final data = event.snapshot.value as Map?;
+      if (data == null) return;
+
+      setState(() {
+        playerName = data['name'] ?? 'Player';
+        playerColor = Color(
+          int.tryParse(data['colour']?.toString() ?? '') ??
+          Colors.blue.value,
+        );
+      });
+    });
+
+    FirebaseDatabase.instance
+      .ref('lobbies/${LobbySession.lobbyCode}/players/${widget.playerId}/coins')
+      .onValue
+      .listen((event) {
+        final val = event.snapshot.value;
+        if (val == null) return;
+
+        setState(() {
+          coins = int.tryParse(val.toString()) ?? 0;
+        });
+    });
   }
 
 
 
   @override
-  Widget build(BuildContext context) {
-    
-    final List<Widget> pages = [
-      MarketPage(playerId: widget.playerId, lobbyCode: LobbySession.lobbyCode), //market
-      PropertiesPage(playerId: widget.playerId), //properties screen
-      HomeScreen(playerId: widget.playerId), // dice screen
-      PlayerListPage(playerId: widget.playerId, lobbyCode: LobbySession.lobbyCode,),//leaderboard
-      const LogsPage(),//log
-      //KeralaMapScreen(playerId: widget.playerId), // map screen
-    ];
+    Widget build(BuildContext context) {
 
-    return Scaffold(
-      body: pages[_selectedIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _selectedIndex,
-        onTap: (index) {
-          setState(() => _selectedIndex = index);
-        },
-        backgroundColor: Colors.indigo,
-        selectedItemColor: Colors.white,
-        unselectedItemColor: Colors.white70,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.shop),label: 'Market',),
-          BottomNavigationBarItem(icon: Icon(Icons.business), label: 'Properties'),
-          BottomNavigationBarItem(icon: Icon(Icons.hourglass_bottom), label: 'Roll'),
-          BottomNavigationBarItem(icon: Icon(Icons.library_books), label: 'Lists'),
-          BottomNavigationBarItem(icon: Icon(Icons.receipt_long),label: 'Logs',),
-        ],
-      ),
-    );
-  }
+      final List<Widget> pages = [
+        MarketPage(playerId: widget.playerId, lobbyCode: LobbySession.lobbyCode),
+        PropertiesPage(playerId: widget.playerId),
+        HomeScreen(playerId: widget.playerId),
+        PlayerListPage(playerId: widget.playerId, lobbyCode: LobbySession.lobbyCode),
+        const LogsPage(),
+      ];
+
+      return Scaffold(
+
+        // ================= SIDEBAR =================
+        drawer: Drawer(
+          backgroundColor: const Color(0xFF020617),
+          child: Column(
+            children: [
+
+              // 👤 PROFILE HEADER
+              GestureDetector(
+                onTap: _openProfileEditor,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 40),
+                  color: Colors.indigo,
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: playerColor,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        playerName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // 🚪 LEAVE LOBBY
+              ListTile(
+                leading: const Icon(Icons.exit_to_app, color: Colors.white),
+                title: const Text("Leave Lobby",
+                    style: TextStyle(color: Colors.white)),
+                onTap: _leaveLobby,
+              ),
+
+              // 🔒 LOGOUT
+              ListTile(
+                leading: const Icon(Icons.logout, color: Colors.white),
+                title: const Text("Logout",
+                    style: TextStyle(color: Colors.white)),
+                onTap: _logout,
+              ),
+            ],
+          ),
+        ),
+
+        // ================= BODY =================
+        body: SafeArea(
+          child: Column(
+            children: [
+
+              // 🔥 TOP BAR WITH MENU BUTTON
+              Container(
+                height: 60,
+                width: double.infinity,
+                color: Colors.indigo,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Row(
+                  children: [
+
+                    // ☰ MENU
+                    Builder(
+                      builder: (context) => IconButton(
+                        icon: const Icon(Icons.menu, color: Colors.white),
+                        onPressed: () {
+                          Scaffold.of(context).openDrawer();
+                        },
+                      ),
+                    ),
+
+                    const SizedBox(width: 10),
+
+                    const Text(
+                      "urban.idle beta lol",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.normal,
+                      ),
+                    ),
+
+                    const Spacer(),
+
+                    // 💰 COINS (GLOBAL NOW)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        '$coins 🪙',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // ================= PAGES =================
+              Expanded(
+                child: PageView(
+                  controller: _pageController,
+                  onPageChanged: (index) {
+                    setState(() => _selectedIndex = index);
+                  },
+                  children: pages,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // ================= BOTTOM NAV =================
+        bottomNavigationBar: BottomNavigationBar(
+          type: BottomNavigationBarType.fixed,
+          currentIndex: _selectedIndex,
+          onTap: (index) {
+            _pageController.animateToPage(
+              index,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+            );
+          },
+          backgroundColor: Colors.indigo,
+          selectedItemColor: Colors.white,
+          unselectedItemColor: Colors.white70,
+          items: const [
+            BottomNavigationBarItem(icon: Icon(Icons.shop), label: 'Market'),
+            BottomNavigationBarItem(icon: Icon(Icons.business), label: 'Properties'),
+            BottomNavigationBarItem(icon: Icon(Icons.hourglass_bottom), label: 'Roll'),
+            BottomNavigationBarItem(icon: Icon(Icons.library_books), label: 'Lists'),
+            BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: 'Logs'),
+          ],
+        ),
+      );
+    }
 }
 
 // ===========================================================
@@ -212,6 +489,8 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     });
   }
+
+  
 
   void listenToPlayerProfile() {
   database
@@ -368,7 +647,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   int get _remainingTime {
     final now = DateTime.now().millisecondsSinceEpoch;
-    const cooldown = 5000;//5 * 60 * 1000; // 5 minutes
+    const cooldown = 5000; //5 * 60 * 1000; // 5 minutes
     final diff = now - _lastRollTime;
 
     if (diff >= cooldown) return 0;
@@ -403,7 +682,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
     Widget build(BuildContext context) {
       return Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: Colors.blue[50],
         body: Stack(
           children: [
             // =====================
@@ -411,65 +690,6 @@ class _HomeScreenState extends State<HomeScreen> {
             // =====================
             Column(
               children: [
-                // TOP BAR
-                Container(
-                  height: 70,
-                  width: double.infinity,
-                  color: Colors.indigo,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      // PLAYER PROFILE
-                      InkWell(
-                        onTap: _openProfileEditor,
-                        borderRadius: BorderRadius.circular(16),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[300],
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 32,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  color: playerColor,
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                playerName,
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  color: Colors.black,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      // COINS
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Text(
-                          '$coins 🪙',
-                          style: const TextStyle(fontSize: 20),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
 
                 // GAME CONTENT
                 Expanded(

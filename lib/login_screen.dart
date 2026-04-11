@@ -1,12 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
-
-import 'services/player_service.dart';
-
-class LobbySession {
-  static String lobbyCode = '';
-}
+import 'lobby_screen.dart';
+import 'services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,28 +10,20 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _codeController = TextEditingController();
+  final _name = TextEditingController();
+  final _pass = TextEditingController();
 
   bool _loading = false;
+  bool _register = false;
+  bool _obscure = true;
   String? _error;
-  bool _creating = false;
 
-  String _map = "kerala";
+  Future<void> _submit() async {
+    final username = _name.text.trim();
+    final password = _pass.text.trim();
 
-  final List<String> _maps = [
-    "kerala",
-    "india",
-    "kerala_extended",
-  ];
-
-  // ================= PLAY =================
-  Future<void> _play() async {
-    final name = _nameController.text.trim();
-    final code = _codeController.text.trim().toUpperCase();
-
-    if (name.isEmpty || code.isEmpty) {
-      setState(() => _error = "Enter name & code");
+    if (username.isEmpty || password.isEmpty) {
+      setState(() => _error = "Fill all fields");
       return;
     }
 
@@ -47,35 +33,34 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final lobbyRef =
-          FirebaseDatabase.instance.ref('lobbies/$code');
-      final snap = await lobbyRef.get();
+      String? uid;
 
-      if (!snap.exists) {
+      if (_register) {
+        uid = await AuthService.register(username, password);
+      } else {
+        uid = await AuthService.login(username, password);
+      }
+
+      if (uid == null ||
+          uid.contains("Invalid") ||
+          uid.contains("exists")) {
         setState(() {
-          _error = "Lobby not found";
+          _error = uid ?? "Auth failed";
           _loading = false;
         });
         return;
       }
 
-      LobbySession.lobbyCode = code;
+      if (!mounted) return;
 
-      final cred = await FirebaseAuth.instance.signInAnonymously();
-      final uid = cred.user!.uid;
-
-      await PlayerService.createGlobalPlayerIfNotExists(uid);
-
-      await FirebaseDatabase.instance.ref('players/$uid').update({
-        'name': name,
-        'colour': Colors.blue.value,
-      });
-
-      await PlayerService.joinLobby(
-        name: name,
-        lobbyCode: code,
-        uid: uid,
-        colour: Colors.blue.value,
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => LobbyScreen(
+            uid: uid!,
+            username: username,
+          ),
+        ),
       );
     } catch (e) {
       setState(() => _error = "Something went wrong");
@@ -84,68 +69,18 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // ================= CREATE =================
-  Future<void> _create() async {
-    final name = _nameController.text.trim();
-    final code = _codeController.text.trim().toUpperCase();
-
-    if (name.isEmpty || code.isEmpty) {
-      setState(() => _error = "Enter name & code");
-      return;
-    }
-
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
-    try {
-      final ref = FirebaseDatabase.instance.ref('lobbies/$code');
-
-      if ((await ref.get()).exists) {
-        setState(() {
-          _error = "Lobby exists";
-          _loading = false;
-        });
-        return;
-      }
-
-      final cred = await FirebaseAuth.instance.signInAnonymously();
-      final uid = cred.user!.uid;
-
-      await ref.set({
-        'createdAt': DateTime.now().millisecondsSinceEpoch,
-        'map': _map,
-      });
-
-      LobbySession.lobbyCode = code;
-
-      await PlayerService.createGlobalPlayerIfNotExists(uid);
-
-      await FirebaseDatabase.instance.ref('players/$uid').update({
-        'name': name,
-        'colour': Colors.blue.value,
-      });
-
-      await PlayerService.joinLobby(
-        name: name,
-        lobbyCode: code,
-        uid: uid,
-        colour: Colors.blue.value,
-      );
-    } catch (e) {
-      setState(() => _error = "Failed to create");
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
   // ================= INPUT =================
-  Widget _input(String hint, TextEditingController c) {
+  Widget _input(
+    String hint,
+    TextEditingController c, {
+    bool obscure = false,
+    Widget? suffix,
+  }) {
     return Container(
       width: 300,
+      margin: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(30),
+        borderRadius: BorderRadius.circular(25),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.3),
@@ -155,16 +90,17 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
       child: TextField(
         controller: c,
+        obscureText: obscure,
         textAlign: TextAlign.center,
-        style: const TextStyle(color: Colors.white, fontSize: 16),
+        style: const TextStyle(color: Colors.white),
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: const TextStyle(color: Colors.white54),
           filled: true,
           fillColor: const Color(0xFF1E293B),
-          contentPadding: const EdgeInsets.symmetric(vertical: 18),
+          suffixIcon: suffix,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(30),
+            borderRadius: BorderRadius.circular(25),
             borderSide: BorderSide.none,
           ),
         ),
@@ -173,22 +109,22 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // ================= BUTTON =================
-  Widget _bigButton(String text, VoidCallback onTap) {
+  Widget _mainButton(String text) {
     return GestureDetector(
-      onTap: _loading ? null : onTap,
+      onTap: _loading ? null : _submit,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
+        duration: const Duration(milliseconds: 200),
         width: 280,
-        height: 64,
+        height: 55,
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-            colors: [Color(0xFF3B82F6), Color(0xFF1D4ED8)],
+            colors: [Color(0xFF6366F1), Color(0xFF4338CA)],
           ),
-          borderRadius: BorderRadius.circular(40),
+          borderRadius: BorderRadius.circular(30),
           boxShadow: [
             BoxShadow(
-              color: Colors.blue.withOpacity(0.6),
-              blurRadius: 25,
+              color: Colors.indigo.withOpacity(0.5),
+              blurRadius: 20,
               offset: const Offset(0, 8),
             )
           ],
@@ -199,9 +135,8 @@ class _LoginScreenState extends State<LoginScreen> {
               : Text(
                   text,
                   style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.2,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
                     color: Colors.white,
                   ),
                 ),
@@ -210,122 +145,72 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _secondaryButton(String text, VoidCallback onTap) {
+  Widget _switchButton() {
     return TextButton(
-      onPressed: onTap,
+      onPressed: () => setState(() => _register = !_register),
       child: Text(
-        text,
+        _register ? "Already have an account? Login"
+                  : "Create new account",
         style: const TextStyle(color: Colors.white70),
       ),
     );
   }
 
-  // ================= MAP SELECTOR =================
-  Widget _mapSelector() {
-    return Container(
-      width: 280,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(30),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: _map,
-          dropdownColor: const Color(0xFF0F172A),
-          style: const TextStyle(color: Colors.white),
-          isExpanded: true,
-          items: _maps.map((map) {
-            return DropdownMenuItem(
-              value: map,
-              child: Text(
-                map.toUpperCase(),
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-            );
-          }).toList(),
-          onChanged: (value) {
-            setState(() => _map = value!);
-          },
-        ),
-      ),
-    );
-  }
-
-  // ================= BUILD =================
+  // ================= UI =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            colors: [
-              Color(0xFF0F172A),
-              Color(0xFF020617),
-            ],
-            radius: 1.2,
-          ),
-        ),
+      backgroundColor: const Color(0xFF020617),
+      body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Spacer(),
 
             const Text(
               "urban.idle",
               style: TextStyle(
-                fontSize: 44,
+                fontSize: 42,
                 fontWeight: FontWeight.w900,
                 color: Colors.white,
-                letterSpacing: 2,
               ),
             ),
 
-            const SizedBox(height: 60),
+            const SizedBox(height: 50),
 
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              child: Column(
-                key: ValueKey(_creating),
-                children: [
-                  _input("PLAYER NAME", _nameController),
-                  const SizedBox(height: 18),
+            _input("USERNAME", _name),
 
-                  _input("LOBBY CODE", _codeController),
-
-                  if (_creating) ...[
-                    const SizedBox(height: 18),
-                    _mapSelector(),
-                  ],
-
-                  const SizedBox(height: 30),
-
-                  _bigButton(
-                    _creating ? "CREATE GAME" : "PLAY",
-                    _creating ? _create : _play,
-                  ),
-
-                  const SizedBox(height: 14),
-
-                  _secondaryButton(
-                    _creating ? "JOIN INSTEAD" : "CREATE GAME",
-                    () => setState(() => _creating = !_creating),
-                  ),
-
-                  if (_error != null) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      _error!,
-                      style: const TextStyle(color: Colors.redAccent),
-                    ),
-                  ],
-                ],
+            _input(
+              "      PASSWORD",
+              _pass,
+              obscure: _obscure,
+              suffix: IconButton(
+                icon: Icon(
+                  _obscure
+                      ? Icons.visibility_off
+                      : Icons.visibility,
+                  color: Colors.white54,
+                ),
+                onPressed: () {
+                  setState(() => _obscure = !_obscure);
+                },
               ),
             ),
 
-            const Spacer(),
+            const SizedBox(height: 25),
+
+            _mainButton(_register ? "REGISTER" : "LOGIN"),
+
+            const SizedBox(height: 10),
+
+            _switchButton(),
+
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                style: const TextStyle(color: Colors.redAccent),
+              ),
+            ],
           ],
         ),
       ),

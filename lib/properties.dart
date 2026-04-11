@@ -4,6 +4,7 @@ import 'package:test/widgets/loading_wrapper.dart';
 import 'dart:math';
 import 'login_screen.dart';
 import 'services/log_service.dart';
+import 'lobby_session.dart';
 
 
 
@@ -445,38 +446,11 @@ class _PropertiesPageState extends State<PropertiesPage> {
     return LoadingWrapper(
       isLoaded: _citiesLoaded && _coinsLoaded,
       child: Scaffold(
-        backgroundColor: Colors.green[50],
+        backgroundColor: Colors.blue[50],
         body: Column( 
           children: [
-            // ---- Coins AppBar ----
-            Container(
-              height: 70,
-              width: double.infinity,
-              color: Colors.indigo,
-              alignment: Alignment.center,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 6,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Text(
-                  '$_coins 🪙', // 🔴 CHANGED: live coins
-                  style: const TextStyle(
-                    fontWeight: FontWeight.normal,
-                    fontSize: 20,
-                    color: Colors.black87,
-                  ),
-                ),
-              ),
-            ),
+
+            
       
             Expanded( 
               child: SingleChildScrollView(
@@ -484,7 +458,7 @@ class _PropertiesPageState extends State<PropertiesPage> {
                   children: [
                     // ---- Carousel ----
                     SizedBox(
-                      height: 600, 
+                      height: 700, 
                       child: _ownedCities.isEmpty
                           ? const Center(
                               child: Text(
@@ -497,8 +471,13 @@ class _PropertiesPageState extends State<PropertiesPage> {
                               animation: _pageController,
                               builder: (context, _) {
                                 return PageView.builder(
+                                
                                   controller: _pageController,
                                   scrollDirection: Axis.vertical,
+                                  physics: const BouncingScrollPhysics(
+                                    parent: AlwaysScrollableScrollPhysics(),
+                                  ),
+                                  pageSnapping: false,
                                   itemCount: _ownedCities.length,
                                   itemBuilder: (context, index) {
                                     final city = _ownedCities[index];
@@ -508,6 +487,7 @@ class _PropertiesPageState extends State<PropertiesPage> {
                                     final cost = city['cost'] ?? '-';
                                     final String? building = city['building']?.toString();
                                     final bool hasBuilding = building != null;
+                                    final String displayBuilding = hasBuilding ? building! : '❌';
                                     final bool inAuction = city['inMarket'] == true;
                                     final String? type = city['type']?.toString();
                                     final bool isSpecial = type == 'PropertyType.railway' || type == 'PropertyType.airport';
@@ -655,7 +635,7 @@ class _PropertiesPageState extends State<PropertiesPage> {
                                                                 MainAxisAlignment
                                                                     .spaceBetween,
                                                             children: [
-                                                              Text('Building: $building',
+                                                              Text('Building: $displayBuilding',
                                                                   style: const TextStyle(
                                                                       fontSize: 18,
                                                                       fontWeight:
